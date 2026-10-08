@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 
 STATUS_PREFIX = 'status/'
 STATUS_MAX_AGE = timedelta(hours=24)
+NO_NEW_CHAPTERS = 'Không có chương mới'
 
 
 class JobError(Exception):
@@ -127,6 +128,7 @@ def run_inspect(ctx: Context, payload: dict) -> None:
     _, downloader, novel = _start(ctx, url, nid)
     _load(ctx, downloader, novel.volumes)
     _write_snapshot(ctx, novel, nid)
+    _prune_status_branches(ctx)
 
 
 def _selected(novel, selections: list[dict]):
@@ -171,6 +173,10 @@ def run_download(ctx: Context, payload: dict) -> None:
         new = [chapter for chapter in chosen if chapter.name not in known_set]
         if new:
             append.append(UpdateCandidate(novel, volume, new, known))
+        else:
+            ctx.reporter.status(f'Không có chương mới cho {volume.name}')
+            ctx.reporter.state['results'].append(
+                {'volume': volume.name, 'ok': False, 'error': NO_NEW_CHAPTERS})
 
     requested = [v.name for v in fresh] + [c.volume.name for c in append]
     ctx.reporter.set_volume_total(len(requested))
@@ -198,25 +204,53 @@ def run_download(ctx: Context, payload: dict) -> None:
                     {'volume': name, 'ok': False, 'error': logs.error_for(name)})
     if error is not None and not done:
         raise error
+    _prune_status_branches(ctx)
+
+
+def _in_update_scope(novel, entry, candidates: list) -> list:
+    """R15: tracked volumes, plus volumes released after the last tracked one.
+
+    Older volumes the user never downloaded are skipped on purpose.
+    """
+    tracked = [i for i, volume in enumerate(novel.volumes)
+               if tracker.find_volume(entry, volume.name) is not None]
+    last = max(tracked, default=-1)
+    index = {id(volume): i for i, volume in enumerate(novel.volumes)}
+    return [c for c in candidates
+            if tracker.find_volume(entry, c.volume.name) is not None
+            or index.get(id(c.volume), -1) > last]
 
 
 def _update_one(ctx: Context, url: str, nid: str) -> None:
     library, downloader, novel = _start(ctx, url, nid)
     info = _fresh_info(ctx.client)
-    ctx.reporter.phase('chapters')
+    entry = tracker.find_novel(info, novel.url)
     done: set = set()
-    on_volume = _on_volume(ctx, library, novel, done)
-
-    def counted(result):
-        # The number of volumes with new chapters is only known inside
-        # update_novel, so the total grows as volumes complete.
-        ctx.reporter.set_volume_total(ctx.reporter.state['volumes']['total'] + 1)
-        on_volume(result)
-
-    with _capture_core_logs(ctx.reporter):
-        downloader.update_novel(novel, info, **_callbacks(ctx, counted))
+    with _capture_core_logs(ctx.reporter) as logs:
+        candidates = downloader.find_updates(
+            novel, info, status=ctx.reporter.status, should_cancel=ctx.should_cancel)
+        kept = _in_update_scope(novel, entry, candidates)
+        ctx.reporter.set_volume_total(
+            ctx.reporter.state['volumes']['total'] + len(kept))
+        ctx.reporter.phase('chapters')
+        error = None
+        if kept:
+            try:
+                downloader.apply_updates(
+                    kept, **_callbacks(ctx, _on_volume(ctx, library, novel, done)))
+            except DownloadError as exc:  # every candidate failed
+                error = exc
+            if ctx.should_cancel():
+                raise Cancelled('Stopped between volumes')
+            for candidate in kept:
+                if candidate.volume.name not in done:
+                    ctx.reporter.volume_done({
+                        'volume': candidate.volume.name, 'ok': False,
+                        'error': logs.error_for(candidate.volume.name)})
     if ctx.should_cancel():
         raise Cancelled('Stopped between volumes')
+    if error is not None:
+        raise error
     _write_snapshot(ctx, novel, nid)
 
 

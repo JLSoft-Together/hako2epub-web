@@ -237,3 +237,49 @@ def test_non_2xx_raises_with_status(client):
         client.get_json('d.json')
     assert ei.value.status == 401
     assert 'Bad credentials' in str(ei.value)
+
+
+@responses.activate
+def test_get_json_large_file_falls_back_to_raw(client):
+    big = {'ln_list': ['x' * 10]}
+    responses.get(f'{CONTENTS}/d.json',
+                  json={'content': '', 'encoding': 'none', 'sha': 'BIG'})
+    responses.get(f'{CONTENTS}/d.json', body=json.dumps(big).encode())
+    assert client.get_json('d.json', ref='main') == (big, 'BIG')
+    raw_req = responses.calls[1].request
+    assert raw_req.headers['Accept'] == 'application/vnd.github.raw'
+    assert 'ref=main' in raw_req.url
+
+
+@responses.activate
+def test_request_retries_5xx_then_succeeds():
+    sleeps = []
+    client = GitHubClient('tok', REPO, sleep=sleeps.append)
+    responses.get(f'{CONTENTS}/d.json', status=502, body='bad gateway')
+    responses.get(f'{CONTENTS}/d.json', json={'content': _b64({'a': 1}), 'sha': 'S'})
+    assert client.get_json('d.json') == ({'a': 1}, 'S')
+    assert len(responses.calls) == 2
+    assert len(sleeps) == 1 and 1 <= sleeps[0] <= 3
+
+
+@responses.activate
+def test_request_retries_connection_error_up_to_three_attempts():
+    import requests as rq
+    sleeps = []
+    client = GitHubClient('tok', REPO, sleep=sleeps.append)
+    for _ in range(3):
+        responses.get(f'{CONTENTS}/d.json', body=rq.ConnectionError('reset'))
+    with pytest.raises(rq.ConnectionError):
+        client.get_json('d.json')
+    assert len(responses.calls) == 3
+    assert len(sleeps) == 2
+
+
+@responses.activate
+def test_request_gives_up_after_three_5xx(client):
+    for _ in range(3):
+        responses.get(f'{CONTENTS}/d.json', status=503, body='unavailable')
+    with pytest.raises(GitHubError) as ei:
+        client.get_json('d.json')
+    assert ei.value.status == 503
+    assert len(responses.calls) == 3

@@ -4,7 +4,8 @@ import logging
 
 import pytest
 
-from hako2epub.downloader import Cancelled, DownloadError, VolumeResult
+from hako2epub import tracker
+from hako2epub.downloader import Cancelled, DownloadError, UpdateCandidate, VolumeResult
 from hako2epub.models import Chapter, LightNovel, Volume
 from hako2epub.net import NetworkError
 
@@ -112,14 +113,20 @@ class FakeDownloader:
             results.append(r)
         return results
 
-    def update_novel(self, novel, info, progress=None, status=None,
-                     on_volume=None, should_cancel=None):
-        self.calls.append(('update_novel', novel.url, info))
+    def find_updates(self, novel, info, status=None, should_cancel=None):
+        # Mirrors core: every volume with chapters missing from ln_info.
+        self.calls.append(('find_updates', novel.url, info))
         if novel.url in self.fail:
             raise self.fail[novel.url]
+        entry = tracker.find_novel(info, novel.url)
+        candidates = []
         for v in novel.volumes:
             self.load_chapters(v)
-        return []
+            fresh = tracker.new_chapters(entry, v.name, v.chapters)
+            if fresh:
+                candidates.append(UpdateCandidate(
+                    novel, v, fresh, tracker.stored_chapters(entry, v.name)))
+        return candidates
 
 
 def make_ctx(client, novels, fail=None, request_id='req1', cancel=None):
@@ -232,13 +239,76 @@ def test_download_cancel_between_volumes_raises_cancelled():
     assert [r['volume'] for r in results] == ['Tập 1']
 
 
-def test_update_cancel_after_update_novel_raises_cancelled():
+def test_update_cancel_after_apply_updates_raises_cancelled():
     client = FakeClient(info=tracked_info())
     ctx, calls = make_ctx(client, {URL: make_novel()}, cancel=lambda c: True)
     with pytest.raises(Cancelled):
         run_update(ctx, {'url': URL})
-    assert [c[0] for c in calls] == ['fetch_novel', 'update_novel']
+    assert [c[0] for c in calls] == ['fetch_novel', 'find_updates', 'apply_updates']
     assert snapshot_path('truyen-1') not in client.json
+
+
+THREE_VOLS = {'Tập 1': ['A1'], 'Tập 2': ['B1', 'B2'], 'Tập 3': ['C1', 'C2'],
+              'Tập 4': ['D1']}
+
+
+def _applied(calls):
+    return [entry for c in calls if c[0] == 'apply_updates' for entry in c[1]]
+
+
+def test_update_skips_untracked_middle_volume():
+    # Tập 1 and Tập 3 tracked; Tập 2 was skipped on purpose (R15).
+    client = FakeClient(info=tracked_info(
+        vols={'Tập 1': ['A1'], 'Tập 3': ['C1', 'C2']}))
+    ctx, calls = make_ctx(client, {URL: make_novel(volumes=THREE_VOLS)})
+    run_update(ctx, {'url': URL})
+    assert 'Tập 2' not in [name for name, _, _ in _applied(calls)]
+    assert not [c for c in calls if c[0] == 'download_volumes']
+
+
+def test_update_downloads_new_trailing_volume():
+    client = FakeClient(info=tracked_info(
+        vols={'Tập 1': ['A1'], 'Tập 3': ['C1', 'C2']}))
+    ctx, calls = make_ctx(client, {URL: make_novel(volumes=THREE_VOLS)})
+    run_update(ctx, {'url': URL})
+    assert _applied(calls) == [('Tập 4', ['D1'], [])]
+    assert ctx.reporter.state['volumes'] == {'done': 1, 'total': 1}
+    names = [v['vol_name'] for v in client.json[INFO_PATH]['ln_list'][0]['vol_list']]
+    assert 'Tập 4' in names and 'Tập 2' not in names
+
+
+def test_update_appends_new_chapters_to_tracked_volume():
+    client = FakeClient(info=tracked_info(
+        vols={'Tập 1': ['A1'], 'Tập 3': ['C1']}))
+    ctx, calls = make_ctx(client, {URL: make_novel(volumes=THREE_VOLS)})
+    run_update(ctx, {'url': URL})
+    assert _applied(calls) == [('Tập 3', ['C2'], ['C1']), ('Tập 4', ['D1'], [])]
+    assert ctx.reporter.state['volumes'] == {'done': 2, 'total': 2}
+    vol = [v for v in client.json[INFO_PATH]['ln_list'][0]['vol_list']
+           if v['vol_name'] == 'Tập 3'][0]
+    assert vol['chapter_list'] == ['C1', 'C2']
+
+
+def test_download_prunes_old_status_branches():
+    client = FakeClient(branches=[
+        {'name': 'status/old', 'commit_date': '2026-10-01T00:00:00Z'}])
+    ctx, _ = make_ctx(client, {URL: make_novel()})
+    run_download(ctx, {'url': URL, 'volumes': [
+        {'index': 0, 'name': 'Tập 1', 'chapters': None}]})
+    assert client.deleted == ['status/old']
+
+
+def test_inspect_prunes_old_status_branches_and_survives_errors():
+    client = FakeClient(branches=[
+        {'name': 'status/old', 'commit_date': '2026-10-01T00:00:00Z'}])
+    ctx, _ = make_ctx(client, {URL: make_novel()})
+    run_inspect(ctx, {'url': URL})
+    assert client.deleted == ['status/old']
+
+    def broken(prefix):
+        raise RuntimeError('api down')
+    client.list_branches = broken
+    run_inspect(ctx, {'url': URL})  # pruning failure is logged, not raised
 
 
 def test_selected_chapters_on_tracked_volume_appends():
@@ -258,6 +328,9 @@ def test_download_skips_append_with_no_new_chapters():
     run_download(ctx, {'url': URL, 'volumes': [
         {'index': 0, 'name': 'Tập 1', 'chapters': [0, 1]}]})
     assert not [c for c in calls if c[0] in ('apply_updates', 'download_volumes')]
+    assert ctx.reporter.state['results'] == [
+        {'volume': 'Tập 1', 'ok': False, 'error': 'Không có chương mới'}]
+    assert 'Không có chương mới cho Tập 1' in ctx.reporter.state['log']
 
 
 def test_download_reports_failed_volume_from_log():
@@ -295,7 +368,7 @@ def test_update_all_continues_after_one_novel_fails():
                           fail={URL: NetworkError('down')})
     run_update(ctx, {})
     assert [c[1] for c in calls if c[0] == 'fetch_novel'] == [URL, URL2]
-    assert [c[1] for c in calls if c[0] == 'update_novel'] == [URL2]
+    assert [c[1] for c in calls if c[0] == 'find_updates'] == [URL2]
     assert ctx.reporter.state['results'][0] == {
         'novel': 'Truyện', 'ok': False, 'error': 'down'}
     assert snapshot_path('truyen-2') in client.json
@@ -307,7 +380,7 @@ def test_update_single_url_passes_fresh_info():
     client = FakeClient(info=info)
     ctx, calls = make_ctx(client, {URL: make_novel()})
     run_update(ctx, {'url': 'ln.hako.vn/truyen/1-truyen'})
-    assert ('update_novel', URL, info) in calls
+    assert ('find_updates', URL, info) in calls
 
 
 def test_update_cancelled_propagates():

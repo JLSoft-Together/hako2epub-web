@@ -11,6 +11,7 @@ import requests
 
 RAW_ACCEPT = 'application/vnd.github.raw'
 OBJECT_ACCEPT = 'application/vnd.github.object'
+REQUEST_ATTEMPTS = 3  # transient 5xx / connection errors
 
 
 def _q(value: str) -> str:
@@ -49,8 +50,19 @@ class GitHubClient:
     def _request(self, method: str, suffix: str, ok_status: tuple[int, ...] = (),
                  headers: dict | None = None, **kwargs) -> requests.Response:
         merged = {**self._headers, **(headers or {})}
-        resp = self._session.request(method, self._url(suffix), headers=merged,
-                                     timeout=60, **kwargs)
+        for attempt in range(1, REQUEST_ATTEMPTS + 1):
+            try:
+                resp = self._session.request(method, self._url(suffix), headers=merged,
+                                             timeout=60, **kwargs)
+            except requests.ConnectionError:
+                if attempt == REQUEST_ATTEMPTS:
+                    raise
+                self._sleep(random.uniform(1, 3))
+                continue
+            if resp.status_code >= 500 and attempt < REQUEST_ATTEMPTS:
+                self._sleep(random.uniform(1, 3))
+                continue
+            break
         if resp.status_code >= 300 and resp.status_code not in ok_status:
             raise GitHubError(resp.status_code, resp.text)
         return resp
@@ -87,8 +99,14 @@ class GitHubClient:
         if resp.status_code == 404:
             return None, None
         payload = resp.json()
-        raw = base64.b64decode(payload['content'])
-        return json.loads(raw.decode('utf-8')), payload['sha']
+        sha = payload['sha']
+        if payload.get('encoding') == 'none' or not payload.get('content'):
+            # Files >= 1 MB come back without inline content; fetch the raw blob.
+            raw = self._request('GET', _contents(path), headers={'Accept': RAW_ACCEPT},
+                                params={'ref': ref}).content
+        else:
+            raw = base64.b64decode(payload['content'])
+        return json.loads(raw.decode('utf-8')), sha
 
     def put_json(self, path: str, data: dict, message: str, sha: str | None,
                  branch: str = 'main') -> str:
