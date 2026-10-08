@@ -90,8 +90,10 @@ npm --prefix web run build
   sớm hơn (worker báo lỗi rõ ràng).
 - Repo private có 2 000 phút Actions/tháng.
 - Nhánh `files` phình dần theo mỗi lần cập nhật (có thể squash về sau).
-- Trường tác giả lấy từ parser upstream, đôi khi hiển thị tình trạng truyện
-  thay vì tên tác giả.
+- Trang truyện của hako hiện không còn hiển thị tác giả, nên tác giả trong EPUB
+  là "Unknown". Worker chỉ nhận dòng có nhãn "Tác giả", nên nếu hako hiện lại
+  thì sẽ tự lấy đúng. EPUB/cache tải trước v0.1.1 có thể ghi nhầm
+  "Đang tiến hành"; tải lại hoặc "Làm mới" để sửa.
 - iOS Safari có thể mở EPUB thay vì lưu file.
 
 ## Smoke test

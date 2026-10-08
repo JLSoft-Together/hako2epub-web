@@ -73,6 +73,19 @@ describe('Novel', () => {
     await waitFor(() => expect((screen.getByLabelText('Chọn tất cả') as HTMLInputElement).checked).toBe(false))
   })
 
+  it('shows the author with its label when known', async () => {
+    window.location.hash = '#/novel?url=' + encodeURIComponent(U1)
+    renderNovel(mkClient())
+    await waitFor(() => expect(screen.getByText('Tác giả: A')).toBeTruthy())
+  })
+
+  it('hides the author line when the worker could not find one', async () => {
+    window.location.hash = '#/novel?url=' + encodeURIComponent(U1)
+    renderNovel(mkClient({ 'data/novels/truyen-1.json': { ...snap('truyen-1', 'Truyện Một', U1), author: '' } }))
+    await waitFor(() => expect(screen.getByText('Truyện Một')).toBeTruthy())
+    expect(screen.queryByText(/Tác giả:/)).toBeNull()
+  })
+
   it('reuses a running inspect for the same novel instead of dispatching again', async () => {
     const running: Job = { requestId: 'old', kind: 'inspect', label: U1, dispatchedAt: Date.now(), phase: 'running' }
     qc.setQueryData(['jobs'], [running])

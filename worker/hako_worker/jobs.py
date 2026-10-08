@@ -9,6 +9,7 @@ from typing import Callable
 from hako2epub import tracker
 from hako2epub.downloader import Cancelled, DownloadError, UpdateCandidate
 
+from .author import extract_author
 from .gh_library import INFO_PATH, GitHubLibrary
 from .ids import InvalidNovelUrl, canonical_url, novel_id
 from .snapshot import snapshot_path, to_snapshot
@@ -110,6 +111,7 @@ def _start(ctx: Context, url: str, nid: str):
     downloader = ctx.make_downloader(library)
     ctx.reporter.phase('fetching')
     novel = downloader.fetch_novel(url)
+    novel.author = extract_author(novel.series_info)
     ctx.reporter.set_novel(novel.name)
     return library, downloader, novel
 

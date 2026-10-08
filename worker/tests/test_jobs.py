@@ -164,6 +164,38 @@ def test_inspect_writes_snapshot():
     assert [c['name'] for c in snap['volumes'][1]['chapters']] == ['D1', 'D2']
 
 
+STATUS_ONLY_INFO = (
+    '<div class="series-information"><div class="info-item">'
+    '<span class="info-name">Tình trạng:</span><span class="info-value">'
+    '<a href="/truyen-dang-tien-hanh">Đang tiến hành</a></span></div></div>'
+)
+
+
+def test_author_is_not_the_status_when_hako_omits_it():
+    entry = make_novel()
+    novel = entry[0]
+    novel.author = 'Đang tiến hành'  # what the core parser picks today
+    novel.series_info = STATUS_ONLY_INFO
+    client = FakeClient()
+    ctx, _ = make_ctx(client, {URL: entry})
+    run_inspect(ctx, {'url': URL})
+    assert client.json[snapshot_path('truyen-1')]['author'] == ''
+
+
+def test_author_kept_when_page_has_author_item():
+    entry = make_novel()
+    novel = entry[0]
+    novel.series_info = STATUS_ONLY_INFO.replace(
+        '<div class="info-item">',
+        '<div class="info-item"><span class="info-name">Tác giả:</span>'
+        '<span class="info-value"><a href="/tac-gia/a">Tác Giả A</a></span></div>'
+        '<div class="info-item">', 1)
+    client = FakeClient()
+    ctx, _ = make_ctx(client, {URL: entry})
+    run_inspect(ctx, {'url': URL})
+    assert client.json[snapshot_path('truyen-1')]['author'] == 'Tác Giả A'
+
+
 def test_download_untracked_volume_uses_download_volumes():
     client = FakeClient()
     ctx, calls = make_ctx(client, {URL: make_novel()})

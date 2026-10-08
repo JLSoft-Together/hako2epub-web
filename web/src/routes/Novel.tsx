@@ -254,7 +254,9 @@ export default function Novel() {
             )}
             <div className="space-y-1">
               <h2 className="text-lg font-semibold">{snapshot.name}</h2>
-              <p className="text-sm text-gray-600">{snapshot.author}</p>
+              {snapshot.author && (
+                <p className="text-sm text-gray-600">Tác giả: {snapshot.author}</p>
+              )}
               <p className="text-xs text-gray-500">
                 Dữ liệu lúc {new Date(snapshot.fetched_at).toLocaleString('vi-VN')}
               </p>
