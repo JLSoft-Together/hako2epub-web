@@ -1,0 +1,11 @@
+[
+  {"input": "https://ln.hako.vn/truyen/1234-ten-truyen", "canonical": "https://ln.hako.vn/truyen/1234-ten-truyen", "novel_id": "truyen-1234"},
+  {"input": "https://docln.net/truyen/1234-ten-truyen/", "canonical": "https://ln.hako.vn/truyen/1234-ten-truyen", "novel_id": "truyen-1234"},
+  {"input": "docln.sbs/truyen/1234-ten-truyen?foo=1#bar", "canonical": "https://ln.hako.vn/truyen/1234-ten-truyen", "novel_id": "truyen-1234"},
+  {"input": "https://ln.hako.vn/truyen/1234-ten-truyen/c5678-chuong-1", "canonical": "https://ln.hako.vn/truyen/1234-ten-truyen", "novel_id": "truyen-1234"},
+  {"input": "https://ln.hako.vn/truyen/1234-ten-truyen/t999-tap-1", "canonical": "https://ln.hako.vn/truyen/1234-ten-truyen", "novel_id": "truyen-1234"},
+  {"input": "http://ln.hako.vn/sang-tac/77-abc", "canonical": "https://ln.hako.vn/sang-tac/77-abc", "novel_id": "sang-tac-77"},
+  {"input": "https://example.com/truyen/1-a", "canonical": null, "novel_id": null},
+  {"input": "https://ln.hako.vn/thao-luan/3437-bi-ddos", "canonical": "https://ln.hako.vn/thao-luan/3437-bi-ddos", "novel_id": "thao-luan-3437"},
+  {"input": "https://ln.hako.vn/", "canonical": null, "novel_id": null}
+]
