@@ -6,6 +6,7 @@ import { navigate } from '../router'
 import { clearSettings } from '../settings'
 import {
   isActive,
+  loadLabels,
   loadPending,
   mergeJob,
   prunePending,
@@ -104,46 +105,78 @@ export function useSnapshot(novelId: string | null): UseQueryResult<Snapshot | n
 
 // ---- jobs ----
 const POLL_MS = 5000
+const LOST_POLL_MS = 15000
 const MAX_RUNS = 20
 const PROGRESS_WINDOW_MS = 60 * 60 * 1000
-const labels = new Map<string, string>()
 
-export async function fetchJobs(client: GitHubClient, now = Date.now()): Promise<Job[]> {
-  const pending = loadPending()
-  for (const p of pending) labels.set(p.requestId, p.label)
+export async function fetchJobs(
+  client: GitHubClient,
+  now = Date.now(),
+  prev: Job[] = [],
+): Promise<Job[]> {
   const runs = (await client.listDispatchRuns())
     .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
     .slice(0, MAX_RUNS)
-  const fresh = prunePending(pending, runs, now)
-  if (fresh.length !== pending.length) savePending(fresh)
+
+  // Read pending only after the await so jobs dispatched meanwhile are seen.
+  const pending = loadPending()
+  const keep = prunePending(pending, runs, now)
+  const kept = new Set(keep.map((p) => p.requestId))
+  const dropped = new Set(pending.filter((p) => !kept.has(p.requestId)).map((p) => p.requestId))
+  if (dropped.size > 0) {
+    // Fresh read-modify-write: never overwrite entries added since our snapshot.
+    savePending(loadPending().filter((p) => !dropped.has(p.requestId)))
+  }
+
+  const prevByRun = new Map<number, Job>()
+  for (const j of prev) if (j.run) prevByRun.set(j.run.id, j)
 
   const progress = await Promise.all(
     runs.map(async (r): Promise<Progress | undefined> => {
-      const recent = now - Date.parse(r.created_at) < PROGRESS_WINDOW_MS
-      if (r.status === 'completed' && !recent) return undefined
+      if (r.status === 'completed') {
+        // Already fetched once after completion: it is final, reuse it.
+        const old = prevByRun.get(r.id)
+        if (old?.run?.status === 'completed') return old.progress
+        if (now - Date.parse(r.created_at) >= PROGRESS_WINDOW_MS) return undefined
+      }
       try {
         return (await client.getJson<Progress>('progress.json', 'status/' + r.display_title))?.data
-      } catch {
+      } catch (e) {
+        if (e instanceof GitHubError && (e.kind === 'auth' || e.kind === 'rate_limit')) throw e
         return undefined
       }
     }),
   )
 
+  const labels = loadLabels(now)
   const byId = new Map(pending.map((p) => [p.requestId, p]))
-  const fromRuns = runs.map((r, i) => {
-    const job = mergeJob(byId.get(r.display_title), r, progress[i], now)
-    return job.label ? job : { ...job, label: labels.get(job.requestId) ?? '' }
-  })
-  const waiting = fresh.map((p) => mergeJob(p, undefined, undefined, now))
-  return [...waiting.sort((a, b) => b.dispatchedAt - a.dispatchedAt), ...fromRuns]
+  const withLabel = (j: Job): Job => (j.label ? j : { ...j, label: labels[j.requestId] ?? '' })
+  const fromRuns = runs.map((r, i) =>
+    withLabel(mergeJob(byId.get(r.display_title), r, progress[i], now)),
+  )
+  const seen = new Set(runs.map((r) => r.display_title))
+  const waiting = pending
+    .filter((p) => !seen.has(p.requestId) && kept.has(p.requestId))
+    .map((p) => withLabel(mergeJob(p, undefined, undefined, now)))
+    .sort((a, b) => b.dispatchedAt - a.dispatchedAt)
+  return [...waiting, ...fromRuns]
+}
+
+export function jobsRefetchInterval(jobs: Job[] | undefined): number | false {
+  if (!jobs) return false
+  if (jobs.some((j) => isActive(j.phase))) return POLL_MS
+  // A lost job may still show up late; keep a slow poll while it is unmatched.
+  if (jobs.some((j) => j.phase === 'lost')) return LOST_POLL_MS
+  return false
 }
 
 export function useJobs(): { jobs: Job[]; activeCount: number } {
   const client = useClient()
+  const qc = useQueryClient()
   const q = useQuery({
     queryKey: ['jobs'],
-    queryFn: () => fetchJobs(client),
-    refetchInterval: (query) => (query.state.data?.some((j) => isActive(j.phase)) ? POLL_MS : false),
+    queryFn: () => fetchJobs(client, Date.now(), qc.getQueryData<Job[]>(['jobs'])),
+    refetchInterval: (query) => jobsRefetchInterval(query.state.data),
   })
   const jobs = q.data ?? []
   return { jobs, activeCount: jobs.filter((j) => isActive(j.phase)).length }

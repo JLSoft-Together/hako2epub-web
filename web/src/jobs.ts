@@ -51,6 +51,34 @@ export function prunePending(list: PendingJob[], runs: Run[], now: number): Pend
   return list.filter((p) => !seen.has(p.requestId) && now - p.dispatchedAt < PENDING_TTL_MS)
 }
 
+const LABELS_KEY = 'hako2epub.labels'
+type LabelMap = Record<string, { label: string; at: number }>
+
+export function loadLabels(now = Date.now()): Record<string, string> {
+  try {
+    const v = JSON.parse(localStorage.getItem(LABELS_KEY) ?? '{}') as LabelMap
+    const out: Record<string, string> = {}
+    for (const [id, e] of Object.entries(v)) {
+      if (e && typeof e.label === 'string' && now - e.at < PENDING_TTL_MS) out[id] = e.label
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+export function saveLabel(requestId: string, label: string, now = Date.now()): void {
+  try {
+    const v = JSON.parse(localStorage.getItem(LABELS_KEY) ?? '{}') as LabelMap
+    const next: LabelMap = {}
+    for (const [id, e] of Object.entries(v)) if (e && now - e.at < PENDING_TTL_MS) next[id] = e
+    next[requestId] = { label, at: now }
+    localStorage.setItem(LABELS_KEY, JSON.stringify(next))
+  } catch {
+    // storage blocked: labels are best-effort
+  }
+}
+
 export function kindFromPath(path: string): JobKind {
   const m = /([^/]+)\.yml/.exec(path)
   const name = m?.[1]
@@ -66,6 +94,7 @@ export async function startJob(
   const requestId = crypto.randomUUID()
   const job: PendingJob = { requestId, kind, label, dispatchedAt: Date.now() }
   savePending([...loadPending(), job])
+  saveLabel(requestId, label)
   try {
     await client.dispatch(`${kind}.yml` as Workflow, requestId, payload)
   } catch (e) {
