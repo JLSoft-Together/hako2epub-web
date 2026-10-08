@@ -1,0 +1,207 @@
+[
+  {
+    "name": "some new",
+    "data": {
+      "ln_list": [
+        {
+          "ln_name": "Đại Ma Vương",
+          "ln_url": "https://ln.hako.vn/truyen/1-dai-ma-vuong",
+          "num_vol": 2,
+          "vol_list": [
+            {
+              "vol_name": "Tập 1",
+              "num_chapter": 2,
+              "chapter_list": [
+                "Chương 1",
+                "Chương 2"
+              ]
+            },
+            {
+              "vol_name": "Tập 2",
+              "num_chapter": 1,
+              "chapter_list": [
+                "Mở đầu"
+              ],
+              "asset": "tap-2-ab12cd34.epub"
+            }
+          ]
+        }
+      ]
+    },
+    "args": {
+      "ln_url": "https://ln.hako.vn/truyen/1-dai-ma-vuong",
+      "vol_name": "Tập 1",
+      "live": [
+        "Chương 1",
+        "Chương 2",
+        "Chương 3"
+      ]
+    },
+    "expected": [
+      "Chương 3"
+    ]
+  },
+  {
+    "name": "unknown novel returns all",
+    "data": {
+      "ln_list": [
+        {
+          "ln_name": "Đại Ma Vương",
+          "ln_url": "https://ln.hako.vn/truyen/1-dai-ma-vuong",
+          "num_vol": 2,
+          "vol_list": [
+            {
+              "vol_name": "Tập 1",
+              "num_chapter": 2,
+              "chapter_list": [
+                "Chương 1",
+                "Chương 2"
+              ]
+            },
+            {
+              "vol_name": "Tập 2",
+              "num_chapter": 1,
+              "chapter_list": [
+                "Mở đầu"
+              ],
+              "asset": "tap-2-ab12cd34.epub"
+            }
+          ]
+        }
+      ]
+    },
+    "args": {
+      "ln_url": "https://ln.hako.vn/truyen/999-khong-co",
+      "vol_name": "Tập 1",
+      "live": [
+        "Chương 1",
+        "Chương 2",
+        "Chương 3"
+      ]
+    },
+    "expected": [
+      "Chương 1",
+      "Chương 2",
+      "Chương 3"
+    ]
+  },
+  {
+    "name": "unknown volume returns all",
+    "data": {
+      "ln_list": [
+        {
+          "ln_name": "Đại Ma Vương",
+          "ln_url": "https://ln.hako.vn/truyen/1-dai-ma-vuong",
+          "num_vol": 2,
+          "vol_list": [
+            {
+              "vol_name": "Tập 1",
+              "num_chapter": 2,
+              "chapter_list": [
+                "Chương 1",
+                "Chương 2"
+              ]
+            },
+            {
+              "vol_name": "Tập 2",
+              "num_chapter": 1,
+              "chapter_list": [
+                "Mở đầu"
+              ],
+              "asset": "tap-2-ab12cd34.epub"
+            }
+          ]
+        }
+      ]
+    },
+    "args": {
+      "ln_url": "https://ln.hako.vn/truyen/1-dai-ma-vuong",
+      "vol_name": "Tập 9",
+      "live": [
+        "Chương 1",
+        "Chương 2",
+        "Chương 3"
+      ]
+    },
+    "expected": [
+      "Chương 1",
+      "Chương 2",
+      "Chương 3"
+    ]
+  },
+  {
+    "name": "empty string in chapter_list ignored",
+    "data": {
+      "ln_list": [
+        {
+          "ln_name": "Đại Ma Vương",
+          "ln_url": "https://ln.hako.vn/truyen/1-dai-ma-vuong",
+          "num_vol": 1,
+          "vol_list": [
+            {
+              "vol_name": "Tập 1",
+              "num_chapter": 3,
+              "chapter_list": [
+                "",
+                "Chương 1",
+                ""
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "args": {
+      "ln_url": "https://ln.hako.vn/truyen/1-dai-ma-vuong",
+      "vol_name": "Tập 1",
+      "live": [
+        "",
+        "Chương 1",
+        "Chương 2"
+      ]
+    },
+    "expected": [
+      "",
+      "Chương 2"
+    ]
+  },
+  {
+    "name": "all stored",
+    "data": {
+      "ln_list": [
+        {
+          "ln_name": "Đại Ma Vương",
+          "ln_url": "https://ln.hako.vn/truyen/1-dai-ma-vuong",
+          "num_vol": 2,
+          "vol_list": [
+            {
+              "vol_name": "Tập 1",
+              "num_chapter": 2,
+              "chapter_list": [
+                "Chương 1",
+                "Chương 2"
+              ]
+            },
+            {
+              "vol_name": "Tập 2",
+              "num_chapter": 1,
+              "chapter_list": [
+                "Mở đầu"
+              ],
+              "asset": "tap-2-ab12cd34.epub"
+            }
+          ]
+        }
+      ]
+    },
+    "args": {
+      "ln_url": "https://ln.hako.vn/truyen/1-dai-ma-vuong",
+      "vol_name": "Tập 1",
+      "live": [
+        "Chương 1",
+        "Chương 2"
+      ]
+    },
+    "expected": []
+  }
+]
