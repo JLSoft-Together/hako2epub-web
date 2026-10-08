@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { GitHubClient, GitHubError } from '../github/client'
 import { navigate, useHashRoute } from '../router'
-import { loadSettings, saveSettings, type Settings } from '../settings'
+import { isRemembered, loadSettings, saveSettings, type Settings } from '../settings'
 import { INFO_PATH } from '../types'
 
 type Check = Awaited<ReturnType<GitHubClient['checkSetup']>>
@@ -37,15 +37,12 @@ export default function Setup({ makeClient = (s) => new GitHubClient(s) }: Setup
   const [busy, setBusy] = useState(false)
   const [check, setCheck] = useState<Check | null>(null)
   const [pending, setPending] = useState<Settings | null>(null)
+  const [remember, setRemember] = useState(isRemembered)
 
   const persist = (s: Settings): boolean => {
-    try {
-      saveSettings(s)
-      return true
-    } catch {
-      setFormErr(STORAGE_MSG)
-      return false
-    }
+    if (saveSettings(s, remember)) return true
+    setFormErr(STORAGE_MSG)
+    return false
   }
 
   const validate = (): Settings | null => {
@@ -170,6 +167,10 @@ export default function Setup({ makeClient = (s) => new GitHubClient(s) }: Setup
           />
           {tokenErr && <p className={err}>{tokenErr}</p>}
         </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+          Ghi nhớ token trên trình duyệt này
+        </label>
         <button
           type="submit"
           disabled={busy}

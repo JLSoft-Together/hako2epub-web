@@ -1,6 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Run } from '../src/github/client'
-import { kindFromPath, loadPending, mergeJob, startJob, type PendingJob } from '../src/jobs'
+import { GitHubError } from '../src/github/errors'
+import {
+  activeInspectId,
+  kindFromPath,
+  loadPending,
+  mergeJob,
+  startJob,
+  type Job,
+  type PendingJob,
+} from '../src/jobs'
 import type { Progress } from '../src/types'
 
 const NOW = 1_000_000_000_000
@@ -70,6 +79,27 @@ describe('mergeJob', () => {
   })
 })
 
+describe('activeInspectId', () => {
+  const U = 'https://ln.hako.vn/truyen/1-n'
+  const job = (over: Partial<Job>): Job => ({
+    requestId: 'r',
+    kind: 'inspect',
+    label: U,
+    dispatchedAt: 0,
+    phase: 'running',
+    ...over,
+  })
+  it('finds a non-terminal inspect with the same canonical URL', () => {
+    expect(activeInspectId([job({ requestId: 'a', phase: 'queued' })], U)).toBe('a')
+    expect(activeInspectId([job({ requestId: 'b', phase: 'dispatching' })], U)).toBe('b')
+  })
+  it('ignores finished jobs, other kinds and other URLs', () => {
+    expect(activeInspectId([job({ phase: 'done' }), job({ phase: 'failed' })], U)).toBeUndefined()
+    expect(activeInspectId([job({ kind: 'download' })], U)).toBeUndefined()
+    expect(activeInspectId([job({ label: U + 'x' })], U)).toBeUndefined()
+  })
+})
+
 describe('kindFromPath', () => {
   it('maps workflow paths', () => {
     expect(kindFromPath('.github/workflows/download.yml')).toBe('download')
@@ -94,5 +124,22 @@ describe('startJob', () => {
     const dispatch = vi.fn().mockRejectedValue(new Error('boom'))
     await expect(startJob({ dispatch } as never, 'inspect', {}, 'x')).rejects.toThrow('boom')
     expect(loadPending()).toHaveLength(0)
+  })
+  it('maps a 404 dispatch to a missing-workflow message', async () => {
+    const dispatch = vi.fn().mockRejectedValue(new GitHubError(404, 'not_found', '{"message":"Not Found"}'))
+    await expect(startJob({ dispatch } as never, 'download', {}, 'x')).rejects.toThrow(
+      'Repo library thiếu workflow download.yml — xem hướng dẫn cài đặt',
+    )
+  })
+  it('maps a 403 dispatch to a permission message', async () => {
+    const dispatch = vi.fn().mockRejectedValue(new GitHubError(403, 'other', '{"message":"Resource not accessible"}'))
+    await expect(startJob({ dispatch } as never, 'update', {}, 'x')).rejects.toThrow(
+      'Token không có quyền chạy workflow (cần Actions: Read and write)',
+    )
+  })
+  it('keeps rate-limit errors as GitHubError', async () => {
+    const err = new GitHubError(403, 'rate_limit', 'limit')
+    const dispatch = vi.fn().mockRejectedValue(err)
+    await expect(startJob({ dispatch } as never, 'update', {}, 'x')).rejects.toBe(err)
   })
 })

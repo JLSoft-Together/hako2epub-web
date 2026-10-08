@@ -66,7 +66,15 @@ export default function App() {
             <a href="#/" className="font-semibold">
               hako2epub
             </a>
-            <JobBadge />
+            <nav className="flex items-center gap-3 text-sm">
+              <a href="#/novel" className="text-blue-700 underline">
+                Thêm truyện
+              </a>
+              <a href="#/setup" className="text-blue-700 underline">
+                Cài đặt
+              </a>
+              <JobBadge />
+            </nav>
           </header>
         )}
         {page}

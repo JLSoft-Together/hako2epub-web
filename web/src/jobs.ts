@@ -1,4 +1,5 @@
 import type { GitHubClient, Run, Workflow } from './github/client'
+import { GitHubError } from './github/errors'
 import type { JobKind, Progress } from './types'
 
 export type JobPhase = 'dispatching' | 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'lost'
@@ -95,13 +96,24 @@ export async function startJob(
   const job: PendingJob = { requestId, kind, label, dispatchedAt: Date.now() }
   savePending([...loadPending(), job])
   saveLabel(requestId, label)
+  const workflow = `${kind}.yml` as Workflow
   try {
-    await client.dispatch(`${kind}.yml` as Workflow, requestId, payload)
+    await client.dispatch(workflow, requestId, payload)
   } catch (e) {
     savePending(loadPending().filter((p) => p.requestId !== requestId))
-    throw e
+    throw dispatchError(e, workflow)
   }
   return requestId
+}
+
+// Readable messages for the common dispatch failures instead of raw GitHub JSON.
+export function dispatchError(e: unknown, workflow: string): unknown {
+  if (!(e instanceof GitHubError)) return e
+  if (e.status === 404) return new Error(`Repo library thiếu workflow ${workflow} — xem hướng dẫn cài đặt`)
+  if (e.status === 403 && e.kind === 'other') {
+    return new Error('Token không có quyền chạy workflow (cần Actions: Read and write)')
+  }
+  return e
 }
 
 function phaseOf(
@@ -139,3 +151,8 @@ export function mergeJob(
 }
 
 export const isActive = (p: JobPhase): boolean => p === 'dispatching' || p === 'queued' || p === 'running'
+
+// Inspect jobs are labelled with the canonical URL, so a running one can be reused.
+export function activeInspectId(jobs: Job[], canonicalUrl: string): string | undefined {
+  return jobs.find((j) => j.kind === 'inspect' && j.label === canonicalUrl && isActive(j.phase))?.requestId
+}

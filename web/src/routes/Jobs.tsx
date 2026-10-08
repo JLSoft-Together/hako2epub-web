@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useCancelJob, useJobs } from '../data/queries'
+import { phaseLabel } from '../format'
 import { loadSettings } from '../settings'
 import type { Job, JobPhase } from '../jobs'
 import type { JobKind, ProgressResult } from '../types'
@@ -42,6 +43,8 @@ function JobRow({ job }: { job: Job }) {
   const [err, setErr] = useState<string | null>(null)
   const p = job.progress
   const settings = loadSettings()
+  // Inspect labels are the canonical URL; show the novel name once the worker knows it.
+  const title = job.kind === 'inspect' ? p?.novel || job.label : job.label || p?.novel
   const canCancel = job.run !== undefined && (job.phase === 'queued' || job.phase === 'running')
 
   const onCancel = async () => {
@@ -61,9 +64,7 @@ function JobRow({ job }: { job: Job }) {
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="font-medium">{KIND_LABEL[job.kind]}</div>
-          {(job.label || p?.novel) && (
-            <div className="truncate text-sm text-gray-600">{job.label || p?.novel}</div>
-          )}
+          {title && <div className="truncate text-sm text-gray-600">{title}</div>}
         </div>
         <span className="shrink-0 text-sm">{PHASE_LABEL[job.phase]}</span>
       </div>
@@ -81,7 +82,7 @@ function JobRow({ job }: { job: Job }) {
 
       {p && (
         <div className="space-y-1">
-          {p.phase && <div className="text-xs text-gray-600">{p.phase}</div>}
+          {p.phase && <div className="text-xs text-gray-600">{phaseLabel(p.phase)}</div>}
           {p.chapters.total > 0 && <Bar label="Chương" done={p.chapters.done} total={p.chapters.total} />}
           {p.volumes.total > 0 && <Bar label="Tập" done={p.volumes.done} total={p.volumes.total} />}
           {p.results.length > 0 && (

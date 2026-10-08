@@ -2,9 +2,19 @@ export type Settings = { owner: string; repo: string; token: string }
 
 const KEY = 'hako2epub.settings'
 
-export function loadSettings(): Settings | null {
+type Store = 'localStorage' | 'sessionStorage'
+
+function storage(name: Store): Storage | null {
   try {
-    const raw = localStorage.getItem(KEY)
+    return window[name]
+  } catch {
+    return null
+  }
+}
+
+function read(name: Store): Settings | null {
+  try {
+    const raw = storage(name)?.getItem(KEY)
     if (!raw) return null
     const v = JSON.parse(raw) as Partial<Settings> | null
     if (
@@ -21,10 +31,44 @@ export function loadSettings(): Settings | null {
   }
 }
 
-export function saveSettings(s: Settings): void {
-  localStorage.setItem(KEY, JSON.stringify(s))
+function remove(name: Store): void {
+  try {
+    storage(name)?.removeItem(KEY)
+  } catch {
+    // storage blocked: nothing to remove
+  }
+}
+
+// Session-only settings (token not remembered) win over remembered ones.
+export function loadSettings(): Settings | null {
+  return read('sessionStorage') ?? read('localStorage')
+}
+
+// True when the current settings live in localStorage (or nothing is saved yet).
+export function isRemembered(): boolean {
+  return read('sessionStorage') === null
+}
+
+// remember=false keeps the token only for this tab session (sessionStorage).
+// Returns false when the browser refused to store them.
+export function saveSettings(s: Settings, remember = true): boolean {
+  const target: Store = remember ? 'localStorage' : 'sessionStorage'
+  const other: Store = remember ? 'sessionStorage' : 'localStorage'
+  let ok = false
+  try {
+    const store = storage(target)
+    if (store) {
+      store.setItem(KEY, JSON.stringify(s))
+      ok = true
+    }
+  } catch {
+    // storage blocked or full
+  }
+  if (ok) remove(other)
+  return ok
 }
 
 export function clearSettings(): void {
-  localStorage.removeItem(KEY)
+  remove('localStorage')
+  remove('sessionStorage')
 }

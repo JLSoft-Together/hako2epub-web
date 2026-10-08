@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchJobs, jobsRefetchInterval } from '../src/data/queries'
+import { QueryClient } from '@tanstack/react-query'
+import { fetchJobs, hasNewlyDone, jobsRefetchInterval, pollJobs } from '../src/data/queries'
 import { GitHubError } from '../src/github/errors'
 import type { Run } from '../src/github/client'
 import { loadLabels, loadPending, prunePending, savePending, startJob } from '../src/jobs'
@@ -134,5 +135,28 @@ describe('fetchJobs', () => {
     expect(loadLabels()[id]).toBe('Saved')
     const jobs = await fetchJobs(fakeClient(() => [mkRun(1, { display_title: id })]) as never, Date.now())
     expect(jobs[0]?.label).toBe('Saved')
+  })
+})
+
+describe('pollJobs', () => {
+  it('invalidates library and snapshots when a job turns done', async () => {
+    const qc = new QueryClient()
+    const spy = vi.spyOn(qc, 'invalidateQueries')
+    let run = mkRun(1)
+    const client = fakeClient(() => [run])
+    qc.setQueryData(['jobs'], await pollJobs(client as never, qc, NOW))
+    expect(spy).not.toHaveBeenCalled()
+    run = mkRun(1, { status: 'completed', conclusion: 'success' })
+    qc.setQueryData(['jobs'], await pollJobs(client as never, qc, NOW))
+    const keys = spy.mock.calls.map((c) => c[0]?.queryKey)
+    expect(keys).toEqual([['library'], ['snapshot']])
+    spy.mockClear()
+    await pollJobs(client as never, qc, NOW) // already done: no repeat
+    expect(spy).not.toHaveBeenCalled()
+  })
+  it('hasNewlyDone ignores the first load', () => {
+    const done = [{ requestId: 'a', phase: 'done' }] as never
+    expect(hasNewlyDone(undefined, done)).toBe(false)
+    expect(hasNewlyDone([{ requestId: 'a', phase: 'running' }] as never, done)).toBe(true)
   })
 })

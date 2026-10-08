@@ -170,12 +170,30 @@ export function jobsRefetchInterval(jobs: Job[] | undefined): number | false {
   return false
 }
 
+// True when a job seen in an earlier poll has just finished successfully.
+export function hasNewlyDone(prev: Job[] | undefined, next: Job[]): boolean {
+  if (!prev) return false
+  const before = new Map(prev.map((j) => [j.requestId, j.phase]))
+  return next.some((j) => j.phase === 'done' && before.has(j.requestId) && before.get(j.requestId) !== 'done')
+}
+
+export async function pollJobs(client: GitHubClient, qc: QueryClient, now = Date.now()): Promise<Job[]> {
+  const prev = qc.getQueryData<Job[]>(['jobs'])
+  const next = await fetchJobs(client, now, prev)
+  if (hasNewlyDone(prev, next)) {
+    // A finished job may have changed the library and snapshots.
+    void qc.invalidateQueries({ queryKey: ['library'] })
+    void qc.invalidateQueries({ queryKey: ['snapshot'] })
+  }
+  return next
+}
+
 export function useJobs(): { jobs: Job[]; activeCount: number } {
   const client = useClient()
   const qc = useQueryClient()
   const q = useQuery({
     queryKey: ['jobs'],
-    queryFn: () => fetchJobs(client, Date.now(), qc.getQueryData<Job[]>(['jobs'])),
+    queryFn: () => pollJobs(client, qc),
     refetchInterval: (query) => jobsRefetchInterval(query.state.data),
   })
   const jobs = q.data ?? []

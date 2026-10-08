@@ -8,6 +8,8 @@ import { novelId } from '../ids'
 import { deleteNovel, deleteVolume } from '../library-actions'
 import type { Asset, LnNovel } from '../types'
 
+const UPDATE_HINT = 'Tải chương mới của các tập đã tải và các tập mới ra sau tập cuối cùng'
+
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 type Pending = { message: string; run: () => void }
@@ -67,17 +69,27 @@ function NovelCard({
   return (
     <li className="space-y-2 rounded border border-gray-200 p-3">
       <div className="flex gap-3">
-        {cover && <img src={cover} alt="" className="h-20 w-14 shrink-0 rounded object-cover" />}
+        {cover && (
+          <img
+            src={cover}
+            alt=""
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            className="h-20 w-14 shrink-0 rounded object-cover"
+          />
+        )}
         <div className="min-w-0 flex-1">
+          <a href={`#/novel?url=${encodeURIComponent(novel.ln_url)}`} className="block font-semibold hover:underline">
+            {novel.ln_name}
+          </a>
           <button
             type="button"
-            className="block w-full text-left font-semibold"
+            className="text-sm text-gray-600 underline"
             aria-expanded={open}
             onClick={() => setOpen((o) => !o)}
           >
-            {novel.ln_name}
+            {novel.vol_list.length} tập {open ? '▲' : '▼'}
           </button>
-          <div className="text-sm text-gray-600">{novel.vol_list.length} tập</div>
         </div>
       </div>
       <div className="flex flex-wrap gap-2 text-sm">
@@ -85,6 +97,7 @@ function NovelCard({
           type="button"
           className="rounded border border-gray-300 px-3 py-2 disabled:opacity-50"
           disabled={update.isPending}
+          title={UPDATE_HINT}
           onClick={() => update.mutate()}
         >
           {update.isSuccess ? 'Đã gửi yêu cầu' : 'Kiểm tra cập nhật'}
@@ -158,7 +171,7 @@ export default function Library() {
   const novels = lib.data?.ln_list ?? []
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 p-4">
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">Thư viện</h1>
         {novels.length > 0 && (
@@ -166,12 +179,14 @@ export default function Library() {
             type="button"
             className="rounded border border-gray-300 px-3 py-2 text-sm disabled:opacity-50"
             disabled={updateAll.isPending}
+            title={UPDATE_HINT}
             onClick={() => updateAll.mutate()}
           >
             {updateAll.isSuccess ? 'Đã gửi yêu cầu' : 'Cập nhật tất cả'}
           </button>
         )}
       </div>
+      {novels.length > 0 && <p className="text-xs text-gray-500">Kiểm tra cập nhật: {UPDATE_HINT}</p>}
       {error && (
         <p role="alert" className="text-sm text-red-700">
           {error}

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useClient, useJobs, useLibrary, useSnapshot, useStartJob } from '../data/queries'
+import { phaseLabel } from '../format'
 import { canonicalUrl, InvalidNovelUrl, novelId } from '../ids'
+import { activeInspectId } from '../jobs'
 import { navigate, useHashRoute } from '../router'
 import { buildDownloadPayload, volumeBadge, type Selection } from '../novel/selection'
 import { ActionsNovelSource } from '../novel/source'
@@ -108,10 +110,18 @@ export default function Novel() {
 
   const snapQuery = useSnapshot(id)
   const snapshot = snapQuery.data ?? null
-  const source = useMemo(() => new ActionsNovelSource(client, startJob), [client, startJob])
+  const jobsRef = useRef(jobs)
+  useEffect(() => {
+    jobsRef.current = jobs
+  }, [jobs])
+  const source = useMemo(
+    () => new ActionsNovelSource(client, startJob, (url) => activeInspectId(jobsRef.current, url)),
+    [client, startJob],
+  )
 
   const load = async (raw: string, refresh: boolean) => {
     setError(null)
+    setRequestId(null)
     let canonical: string
     try {
       canonical = canonicalUrl(raw)
@@ -133,14 +143,22 @@ export default function Novel() {
     }
   }
 
-  const started = useRef(false)
+  // Load on mount and whenever ?url= changes while this screen stays mounted.
+  const urlParam = route.params.get('url')
+  const loadedParam = useRef<string | null>(null)
   useEffect(() => {
-    if (started.current) return
-    started.current = true
-    const u = route.params.get('url')
-    if (u) void load(u, false)
+    if (!urlParam || urlParam === loadedParam.current) return
+    loadedParam.current = urlParam
+    setInput(urlParam)
+    void load(urlParam, false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [urlParam])
+
+  // A new snapshot may renumber or rename volumes: drop the old selection.
+  const fetchedAt = snapshot?.fetched_at
+  useEffect(() => {
+    setSel({})
+  }, [fetchedAt])
 
   const job = requestId ? jobs.find((j) => j.requestId === requestId) : undefined
   const phase = job?.phase
@@ -208,7 +226,7 @@ export default function Novel() {
           <p>Đang đọc truyện…</p>
           {job?.progress && (
             <p className="text-xs text-gray-600">
-              {job.progress.phase} {job.progress.chapters.done}/{job.progress.chapters.total}
+              {phaseLabel(job.progress.phase)} {job.progress.chapters.done}/{job.progress.chapters.total}
             </p>
           )}
         </div>

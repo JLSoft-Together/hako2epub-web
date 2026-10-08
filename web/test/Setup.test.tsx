@@ -19,6 +19,7 @@ describe('Setup', () => {
   beforeEach(() => {
     qc = new QueryClient()
     localStorage.clear()
+    sessionStorage.clear()
     window.location.hash = ''
   })
   afterEach(cleanup)
@@ -78,6 +79,21 @@ describe('Setup', () => {
     fill('me/lib', 'tok')
     await waitFor(() => expect(screen.getByText('Token sai hoặc hết hạn')).toBeTruthy())
     expect(JSON.parse(localStorage.getItem('hako2epub.settings')!)).toEqual(saved)
+  })
+
+  it('stores settings in sessionStorage when "remember" is unchecked', async () => {
+    const makeClient = () => ({
+      checkSetup: async () => ({ repoOk: true, canPush: true, missingWorkflows: [], hasLibrary: true }),
+      updateJson: async () => ({}) as never,
+    })
+    renderSetup(<Setup makeClient={makeClient} />)
+    const box = screen.getByLabelText('Ghi nhớ token trên trình duyệt này') as HTMLInputElement
+    expect(box.checked).toBe(true)
+    fireEvent.click(box)
+    fill('me/lib', 'tok')
+    await waitFor(() => expect(sessionStorage.getItem('hako2epub.settings')).not.toBeNull())
+    expect(localStorage.getItem('hako2epub.settings')).toBeNull()
+    sessionStorage.clear()
   })
 
   it('clears query cache after a successful save', async () => {
