@@ -112,3 +112,55 @@ def test_status_branch_sink_creates_branch_once_and_reuses_sha():
     assert [p[2] for p in client.puts] == [None, 'sha1']
     assert client.puts[1][0] == 'progress.json'
     assert client.puts[1][3] == 'status/req1'
+
+
+class FlakyClient(FakeClient):
+    def __init__(self, fail_create=False, fail_put_once=False):
+        super().__init__()
+        self.fail_create = fail_create
+        self.fail_put_once = fail_put_once
+        self.server_sha = None
+
+    def create_branch(self, branch, from_branch='main'):
+        self.created.append(branch)
+        if self.fail_create:
+            self.fail_create = False
+            raise RuntimeError('lost response')
+
+    def get_json(self, path, ref='main'):
+        return {}, self.server_sha
+
+    def put_json(self, path, data, message, sha, branch='main'):
+        if sha != self.server_sha:
+            raise RuntimeError('conflict')
+        self.server_sha = f'srv{len(self.puts)}'
+        self.puts.append((path, data, sha, branch))
+        if self.fail_put_once:
+            self.fail_put_once = False
+            raise RuntimeError('response lost')
+        return self.server_sha
+
+
+def _try(sink, state):
+    try:
+        sink(state)
+    except RuntimeError:
+        pass
+
+
+def test_sink_recovers_stale_sha_after_failed_put():
+    client = FlakyClient(fail_put_once=True)
+    sink = StatusBranchSink(client, 'req1')
+    _try(sink, {'phase': 'a'})
+    sink({'phase': 'b'})
+    assert client.puts[-1][1] == {'phase': 'b'}
+    assert client.puts[-1][2] == 'srv0'
+
+
+def test_sink_recovers_after_failed_create():
+    client = FlakyClient(fail_create=True)
+    sink = StatusBranchSink(client, 'req1')
+    _try(sink, {'phase': 'a'})
+    sink({'phase': 'b'})
+    assert client.created == ['status/req1']
+    assert client.puts[-1][1] == {'phase': 'b'}

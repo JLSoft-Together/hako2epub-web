@@ -85,12 +85,22 @@ class StatusBranchSink:
     def __init__(self, client, request_id: str):
         self._client = client
         self._branch = f'status/{request_id}'
-        self._created = False
+        self._create_attempted = False
         self._sha: str | None = None
 
     def __call__(self, state: dict) -> None:
-        if not self._created:
+        if not self._create_attempted:
+            # Mark first: if create raised after succeeding server-side, the
+            # next call proceeds and uses the existing branch.
+            self._create_attempted = True
             self._client.create_branch(self._branch)
-            self._created = True
-        self._sha = self._client.put_json(
-            'progress.json', state, 'progress', self._sha, branch=self._branch)
+        try:
+            if self._sha is None:
+                _, self._sha = self._client.get_json(
+                    'progress.json', ref=self._branch)
+            self._sha = self._client.put_json(
+                'progress.json', state, f'progress: {state.get("phase", "")}',
+                self._sha, branch=self._branch)
+        except Exception:
+            self._sha = None  # re-resolve from the branch on the next call
+            raise
