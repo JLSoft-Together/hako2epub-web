@@ -1,7 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { GitHubError } from '../src/github/errors'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactElement } from 'react'
 import Setup, { parseRepo } from '../src/routes/Setup'
+
+let qc: QueryClient
+const renderSetup = (ui: ReactElement) =>
+  render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
 
 const fill = (repo: string, token: string) => {
   fireEvent.change(screen.getByLabelText(/Repo thư viện/), { target: { value: repo } })
@@ -11,6 +17,7 @@ const fill = (repo: string, token: string) => {
 
 describe('Setup', () => {
   beforeEach(() => {
+    qc = new QueryClient()
     localStorage.clear()
     window.location.hash = ''
   })
@@ -23,7 +30,7 @@ describe('Setup', () => {
   })
 
   it('shows validation errors', () => {
-    render(<Setup />)
+    renderSetup(<Setup />)
     fill('bad', '  ')
     expect(screen.getByText('Nhập repo dạng owner/repo')).toBeTruthy()
     expect(screen.getByText('Nhập token (PAT)')).toBeTruthy()
@@ -36,7 +43,7 @@ describe('Setup', () => {
       },
       updateJson: async () => ({}) as never,
     })
-    render(<Setup makeClient={makeClient} />)
+    renderSetup(<Setup makeClient={makeClient} />)
     fill('me/lib', 'tok')
     await waitFor(() => expect(screen.getByText('Token sai hoặc hết hạn')).toBeTruthy())
   })
@@ -46,7 +53,7 @@ describe('Setup', () => {
       checkSetup: async () => ({ repoOk: true, canPush: true, missingWorkflows: [], hasLibrary: false }),
       updateJson: async () => ({}) as never,
     })
-    render(<Setup makeClient={makeClient} />)
+    renderSetup(<Setup makeClient={makeClient} />)
     fill('me/lib', 'tok')
     await waitFor(() => expect(screen.getByRole('button', { name: 'Tạo thư viện trống' })).toBeTruthy())
     expect(screen.getByText(/✗ Có thư viện/)).toBeTruthy()
@@ -54,7 +61,34 @@ describe('Setup', () => {
 
   it('shows auth message from ?reason=auth', () => {
     window.location.hash = '#/setup?reason=auth'
-    render(<Setup />)
+    renderSetup(<Setup />)
     expect(screen.getByText('Token sai hoặc hết hạn')).toBeTruthy()
+  })
+
+  it('keeps saved settings on auth error', async () => {
+    const saved = { owner: 'a', repo: 'b', token: 'old' }
+    localStorage.setItem('hako2epub.settings', JSON.stringify(saved))
+    const makeClient = () => ({
+      checkSetup: async () => {
+        throw new GitHubError(401, 'auth', 'bad')
+      },
+      updateJson: async () => ({}) as never,
+    })
+    renderSetup(<Setup makeClient={makeClient} />)
+    fill('me/lib', 'tok')
+    await waitFor(() => expect(screen.getByText('Token sai hoặc hết hạn')).toBeTruthy())
+    expect(JSON.parse(localStorage.getItem('hako2epub.settings')!)).toEqual(saved)
+  })
+
+  it('clears query cache after a successful save', async () => {
+    qc.setQueryData(['library'], { ln_list: [{ old: true }] })
+    const makeClient = () => ({
+      checkSetup: async () => ({ repoOk: true, canPush: true, missingWorkflows: [], hasLibrary: true }),
+      updateJson: async () => ({}) as never,
+    })
+    renderSetup(<Setup makeClient={makeClient} />)
+    fill('me/lib', 'tok')
+    await waitFor(() => expect(localStorage.getItem('hako2epub.settings')).not.toBeNull())
+    expect(qc.getQueryData(['library'])).toBeUndefined()
   })
 })

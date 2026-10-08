@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { GitHubClient, GitHubError } from '../github/client'
 import { navigate, useHashRoute } from '../router'
-import { clearSettings, loadSettings, saveSettings, type Settings } from '../settings'
+import { loadSettings, saveSettings, type Settings } from '../settings'
 import { INFO_PATH } from '../types'
 
 type Check = Awaited<ReturnType<GitHubClient['checkSetup']>>
@@ -25,6 +26,7 @@ export function parseRepo(input: string): { owner: string; repo: string } | stri
 
 export default function Setup({ makeClient = (s) => new GitHubClient(s) }: SetupProps) {
   const route = useHashRoute()
+  const queryClient = useQueryClient()
   const saved = loadSettings()
   const [repoInput, setRepoInput] = useState(saved ? `${saved.owner}/${saved.repo}` : '')
   const [token, setToken] = useState('')
@@ -57,11 +59,7 @@ export default function Setup({ makeClient = (s) => new GitHubClient(s) }: Setup
 
   const fail = (e: unknown) => {
     if (e instanceof GitHubError && e.kind === 'auth') {
-      try {
-        clearSettings()
-      } catch {
-        setFormErr(STORAGE_MSG)
-      }
+      // Keep any previously saved settings: only the newly typed token was rejected.
       setAuthErr(true)
     } else {
       setFormErr(e instanceof Error ? e.message : String(e))
@@ -81,7 +79,10 @@ export default function Setup({ makeClient = (s) => new GitHubClient(s) }: Setup
       setCheck(result)
       setPending(s)
       if (result.repoOk && result.canPush && result.missingWorkflows.length === 0 && result.hasLibrary) {
-        if (persist(s)) navigate('/')
+        if (persist(s)) {
+          queryClient.clear()
+          navigate('/')
+        }
       }
     } catch (e) {
       fail(e)
@@ -96,7 +97,10 @@ export default function Setup({ makeClient = (s) => new GitHubClient(s) }: Setup
     setBusy(true)
     try {
       await makeClient(pending).updateJson(INFO_PATH, (c) => c ?? { ln_list: [] }, 'init library')
-      if (persist(pending)) navigate('/')
+      if (persist(pending)) {
+        queryClient.clear()
+        navigate('/')
+      }
     } catch (e) {
       fail(e)
     } finally {
