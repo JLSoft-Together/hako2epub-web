@@ -5,10 +5,20 @@ import json
 import random
 import time
 from typing import Callable
+from urllib.parse import quote
 
 import requests
 
 RAW_ACCEPT = 'application/vnd.github.raw'
+OBJECT_ACCEPT = 'application/vnd.github.object'
+
+
+def _q(value: str) -> str:
+    return quote(value, safe='/')
+
+
+def _contents(path: str) -> str:
+    return f'contents/{_q(path)}'
 
 
 class GitHubError(Exception):
@@ -50,8 +60,9 @@ class GitHubClient:
         return json.dumps(data, ensure_ascii=False, indent=2).encode('utf-8')
 
     def _sha_of(self, path: str, ref: str) -> str | None:
-        resp = self._request('GET', f'contents/{path}', ok_status=(404,),
-                             params={'ref': ref})
+        # object media type: documented for 1-100 MB files, omits the blob for small ones
+        resp = self._request('GET', _contents(path), ok_status=(404,),
+                             headers={'Accept': OBJECT_ACCEPT}, params={'ref': ref})
         if resp.status_code == 404:
             return None
         return resp.json()['sha']
@@ -65,13 +76,13 @@ class GitHubClient:
         }
         if sha:
             body['sha'] = sha
-        return self._request('PUT', f'contents/{path}', ok_status=(409, 422),
+        return self._request('PUT', _contents(path), ok_status=(409, 422),
                              json=body)
 
     # -- json files ---------------------------------------------------------
 
     def get_json(self, path: str, ref: str = 'main') -> tuple[dict | None, str | None]:
-        resp = self._request('GET', f'contents/{path}', ok_status=(404,),
+        resp = self._request('GET', _contents(path), ok_status=(404,),
                              params={'ref': ref})
         if resp.status_code == 404:
             return None, None
@@ -120,7 +131,7 @@ class GitHubClient:
         raise AssertionError('unreachable')  # retries < 1
 
     def get_file_bytes(self, path: str, ref: str = 'files') -> bytes | None:
-        resp = self._request('GET', f'contents/{path}', ok_status=(404,),
+        resp = self._request('GET', _contents(path), ok_status=(404,),
                              headers={'Accept': RAW_ACCEPT}, params={'ref': ref})
         if resp.status_code == 404:
             return None
@@ -130,13 +141,13 @@ class GitHubClient:
         sha = self._sha_of(path, branch)
         if sha is None:
             return
-        self._request('DELETE', f'contents/{path}', ok_status=(404,),
+        self._request('DELETE', _contents(path), ok_status=(404,),
                       json={'message': message, 'sha': sha, 'branch': branch})
 
     # -- branches -----------------------------------------------------------
 
     def create_branch(self, branch: str, from_branch: str = 'main') -> None:
-        ref = self._request('GET', f'git/ref/heads/{from_branch}').json()
+        ref = self._request('GET', f'git/ref/heads/{_q(from_branch)}').json()
         resp = self._request('POST', 'git/refs', ok_status=(422,),
                              json={'ref': f'refs/heads/{branch}',
                                    'sha': ref['object']['sha']})
@@ -144,10 +155,10 @@ class GitHubClient:
             raise GitHubError(resp.status_code, resp.text)
 
     def delete_branch(self, branch: str) -> None:
-        self._request('DELETE', f'git/refs/heads/{branch}', ok_status=(404, 422))
+        self._request('DELETE', f'git/refs/heads/{_q(branch)}', ok_status=(404, 422))
 
     def list_branches(self, prefix: str) -> list[dict]:
-        refs = self._request('GET', f'git/matching-refs/heads/{prefix}').json()
+        refs = self._request('GET', f'git/matching-refs/heads/{_q(prefix)}').json()
         result = []
         for ref in refs:
             commit = self._request('GET', f'commits/{ref["object"]["sha"]}').json()

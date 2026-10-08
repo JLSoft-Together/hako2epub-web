@@ -157,6 +157,42 @@ def test_delete_file_sends_sha(client):
     client.delete_file('f', 'rm')
     body = json.loads(responses.calls[1].request.body)
     assert body == {'message': 'rm', 'sha': 'S', 'branch': 'files'}
+    assert responses.calls[0].request.headers['Accept'] == 'application/vnd.github.object'
+
+
+@responses.activate
+def test_put_file_sha_lookup_uses_object_accept(client):
+    responses.get(f'{API}/repos/{REPO}/git/ref/heads/main', json={'object': {'sha': 'M'}})
+    responses.post(f'{API}/repos/{REPO}/git/refs', json={})
+    responses.get(f'{CONTENTS}/a', json={'sha': 'S'})
+    responses.put(f'{CONTENTS}/a', json={'content': {'path': 'a', 'sha': '1', 'size': 1}})
+    client.put_file('a', b'x', 'm')
+    get = [c for c in responses.calls if c.request.url.startswith(f'{CONTENTS}/a')][0]
+    assert get.request.headers['Accept'] == 'application/vnd.github.object'
+
+
+@responses.activate
+def test_paths_are_url_quoted(client):
+    responses.get(f'{CONTENTS}/data/t%20%C4%91.json', status=404, json={})
+    assert client.get_json('data/t đ.json') == (None, None)
+
+
+@responses.activate
+def test_get_json_decodes_vietnamese_utf8(client):
+    data = {'title': 'Đại Chúa Tể - Tiếng Việt'}
+    raw = json.dumps(data, ensure_ascii=False).encode('utf-8')
+    responses.get(f'{CONTENTS}/v.json',
+                  json={'content': base64.b64encode(raw).decode(), 'sha': 'S'})
+    assert client.get_json('v.json') == (data, 'S')
+
+
+@responses.activate
+def test_update_json_retries_on_422(client):
+    responses.get(f'{CONTENTS}/d.json', json={'content': _b64({}), 'sha': 'S'})
+    responses.put(f'{CONTENTS}/d.json', status=422, json={'message': 'sha mismatch'})
+    responses.put(f'{CONTENTS}/d.json', json={'content': {'sha': 'N'}})
+    assert client.update_json('d.json', lambda c: {'ok': 1}, 'm') == {'ok': 1}
+    assert len(_put_bodies()) == 2
 
 
 @responses.activate
