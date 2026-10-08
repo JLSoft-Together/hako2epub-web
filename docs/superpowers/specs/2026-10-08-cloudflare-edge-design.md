@@ -172,7 +172,10 @@ Header: "hako2epub" (về `#/`), "Tiến trình" + `JobBadge`, "Đăng xuất".
   với `credentials: 'same-origin'`.
 - **Xoá:** `routes/Library.tsx`, `routes/Setup.tsx`, `settings.ts`,
   `library-actions.ts`, `components/ConfirmDialog.tsx` nếu không còn dùng, phần chọn chương
-  trong `novel/selection.ts`, kind `update` trong `jobs.ts`; các test tương ứng.
+  trong `novel/selection.ts` (`volumeBadge`, chọn chương); các test tương ứng. Kind `update`
+  giữ trong `JobKind` chỉ để hiển thị run cũ, không còn UI khởi chạy.
+- **Lọc job:** `fetchJobs` chỉ giữ run có `display_title` nằm trong pending hoặc
+  labels của trình duyệt này (nhiều người dùng chung một repo).
 - **`vite.config`:** `base: '/'`. Dev: `server.proxy['/api'] = 'http://localhost:8787'`
   (chạy `wrangler dev` trong `edge/` song song).
 
