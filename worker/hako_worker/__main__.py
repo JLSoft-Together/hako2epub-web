@@ -15,6 +15,7 @@ from hako2epub.net import NetworkError, NetworkManager
 from . import jobs
 from .gh_library import EpubTooLarge
 from .github import GitHubClient
+from .net import AssetNetwork
 from .progress import ProgressReporter, StatusBranchSink
 
 log = logging.getLogger('hako_worker')
@@ -66,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
 
             def make_downloader(library):
                 if not network:
-                    network.append(NetworkManager())
+                    network.append(AssetNetwork())
                 return LightNovelDownloader(
                     output_dir=tmp, network=network[0], library=library)
 
