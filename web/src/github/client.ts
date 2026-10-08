@@ -69,7 +69,8 @@ export class GitHubClient {
       'X-GitHub-Api-Version': '2022-11-28',
       ...o.headers,
     }
-    const init: RequestInit = { method, headers }
+    // GitHub sends max-age=60; a cached GET would return a stale sha / stale polling data.
+    const init: RequestInit = { method, headers, cache: 'no-store' }
     if (o.body !== undefined) init.body = JSON.stringify(o.body)
     const resp = await this.fetchImpl(this.url(suffix), init)
     if (resp.status >= 300 && !o.ok?.includes(resp.status)) {
@@ -81,7 +82,14 @@ export class GitHubClient {
   async getJson<T>(path: string, ref = 'main'): Promise<{ data: T; sha: string } | null> {
     const resp = await this.request('GET', contents(path) + refQuery(ref), { ok: [404] })
     if (resp.status === 404) return null
-    const payload = (await resp.json()) as { content: string; sha: string }
+    const payload = (await resp.json()) as { content?: string; encoding?: string; sha: string }
+    if (payload.encoding === 'none' || !payload.content) {
+      // Files >= 1 MB come back without inline content; fetch the raw body instead.
+      const raw = await this.request('GET', contents(path) + refQuery(ref), {
+        headers: { Accept: RAW_ACCEPT },
+      })
+      return { data: JSON.parse(await raw.text()) as T, sha: payload.sha }
+    }
     return { data: JSON.parse(fromBase64(payload.content)) as T, sha: payload.sha }
   }
 

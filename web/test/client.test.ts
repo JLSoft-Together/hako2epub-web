@@ -82,6 +82,27 @@ describe('GitHubClient', () => {
     expect((await client.getJson('x.json'))?.data).toEqual({ a: 1 })
   })
 
+  it('uses cache no-store on every request incl. updateJson re-read', async () => {
+    let puts = 0
+    const { client, calls } = setup((c) => {
+      if (c.init.method === 'PUT') return ++puts === 1 ? json(409, {}) : json(200, {})
+      return json(404, {})
+    })
+    await client.updateJson('x.json', () => ({}), 'm')
+    expect(calls.length).toBe(4)
+    for (const c of calls) expect(c.init.cache).toBe('no-store')
+  })
+
+  it('getJson falls back to raw for large files with encoding none', async () => {
+    const { client, calls } = setup((c) =>
+      hdr(c, 'Accept') === 'application/vnd.github.raw'
+        ? new Response(JSON.stringify({ name: 'Tập 1' }))
+        : json(200, { content: '', encoding: 'none', sha: 'big' }),
+    )
+    expect(await client.getJson<{ name: string }>('x.json')).toEqual({ data: { name: 'Tập 1' }, sha: 'big' })
+    expect(calls).toHaveLength(2)
+  })
+
   it('updateJson creates missing file', async () => {
     const { client, calls } = setup((c) =>
       c.init.method === 'PUT' ? json(201, { content: { sha: 'n' } }) : json(404, {}),
