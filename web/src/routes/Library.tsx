@@ -3,11 +3,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useClient, useLibrary, useSnapshot, useStartJob } from '../data/queries'
 import { downloadEpub } from '../download'
+import { formatMb } from '../format'
 import { novelId } from '../ids'
 import { deleteNovel, deleteVolume } from '../library-actions'
 import type { Asset, LnNovel } from '../types'
 
-const mb = (bytes: number) => `${(bytes / 1024 / 1024).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} MB`
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 type Pending = { message: string; run: () => void }
@@ -46,17 +46,20 @@ function NovelCard({
     mutationFn: (vol: string) => deleteVolume(client, novel, vol),
     onMutate: () => onError(null),
     onSuccess: refresh,
-    onError: (e) => onError(errMsg(e)),
+    onError: (e) => onError(`${errMsg(e)} — thử xoá lại`),
   })
   const delNovel = useMutation({
     mutationFn: () => deleteNovel(client, novel),
     onMutate: () => onError(null),
     onSuccess: refresh,
-    onError: (e) => onError(errMsg(e)),
+    onError: (e) => onError(`${errMsg(e)} — thử xoá lại`),
   })
   const update = useMutation({
     mutationFn: () => startJob('update', { url: novel.ln_url }, novel.ln_name),
     onMutate: () => onError(null),
+    onSuccess: () => {
+      setTimeout(() => update.reset(), 5000)
+    },
     onError: (e) => onError(errMsg(e)),
   })
   const busy = delVol.isPending || delNovel.isPending
@@ -104,7 +107,7 @@ function NovelCard({
               <div className="min-w-0">
                 <div>{v.vol_name}</div>
                 <div className="text-xs text-gray-600">
-                  {v.num_chapter} chương{v.asset ? ` · ${mb(v.asset.size)}` : ''}
+                  {v.num_chapter} chương{v.asset ? ` · ${formatMb(v.asset.size)}` : ''}
                 </div>
               </div>
               <div className="flex gap-2 text-sm">
@@ -147,6 +150,9 @@ export default function Library() {
   const updateAll = useMutation({
     mutationFn: () => startJob('update', {}, 'Tất cả truyện'),
     onMutate: () => setError(null),
+    onSuccess: () => {
+      setTimeout(() => updateAll.reset(), 5000)
+    },
     onError: (e) => setError(errMsg(e)),
   })
   const novels = lib.data?.ln_list ?? []

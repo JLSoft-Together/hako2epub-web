@@ -13,6 +13,7 @@ const asset: Asset = {
 
 describe('downloadEpub', () => {
   it('uses asset.filename', async () => {
+    vi.useFakeTimers()
     const client = { getFileBytes: vi.fn().mockResolvedValue(new Blob(['x'])) } as any
     const anchors: HTMLAnchorElement[] = []
     const realCreate = document.createElement.bind(document)
@@ -31,7 +32,10 @@ describe('downloadEpub', () => {
     expect(client.getFileBytes).toHaveBeenCalledWith('epub/1/a.epub', 'files')
     expect(anchors[0].download).toBe('Tập 1 - Truyện.epub')
     expect(anchors[0].click).toHaveBeenCalled()
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(30_000)
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:x')
+    vi.useRealTimers()
   })
 
   it('throws Vietnamese error when file missing', async () => {

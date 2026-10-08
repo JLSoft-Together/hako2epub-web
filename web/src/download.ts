@@ -14,6 +14,7 @@ export async function downloadEpub(client: GitHubClient, asset: Asset, doc: Docu
     a.click()
   } finally {
     a.remove()
-    URL.revokeObjectURL(url)
+    // Safari/iOS may abort the download if the URL is revoked immediately.
+    setTimeout(() => URL.revokeObjectURL(url), 30_000)
   }
 }
