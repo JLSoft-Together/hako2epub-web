@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
+import JobBadge from './components/JobBadge'
 import { ClientContext, createQueryClient, useLastError } from './data/queries'
 import { GitHubClient } from './github/client'
 import Jobs from './routes/Jobs'
@@ -60,6 +61,14 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <ClientContext.Provider value={client}>
         <Banner />
+        {page && route.name !== 'setup' && (
+          <header className="flex items-center justify-between border-b border-gray-200 px-4 py-2">
+            <a href="#/" className="font-semibold">
+              hako2epub
+            </a>
+            <JobBadge />
+          </header>
+        )}
         {page}
       </ClientContext.Provider>
     </QueryClientProvider>
