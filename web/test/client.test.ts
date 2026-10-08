@@ -190,8 +190,9 @@ describe('GitHubClient', () => {
       ++n === 1 ? new Response(new Uint8Array([1, 2, 3])) : json(404, {}),
     )
     const blob = await client.getFileBytes('books/a.epub')
-    expect(blob).toBeInstanceOf(Blob)
-    expect(blob!.size).toBe(3)
+    // Node 22 + jsdom expose different Blob classes, so check the bytes, not instanceof.
+    expect(blob).not.toBeNull()
+    expect([...new Uint8Array(await blob!.arrayBuffer())]).toEqual([1, 2, 3])
     expect(hdr(calls[0], 'Accept')).toBe('application/vnd.github.raw')
     expect(calls[0].url).toContain('/contents/books/a.epub?ref=files')
     expect(await client.getFileBytes('books/a.epub')).toBeNull()
