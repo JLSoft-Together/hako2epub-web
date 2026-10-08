@@ -29,6 +29,12 @@ EPUB lưu thành file trên nhánh `files` thay vì Releases, vì trình duyệt
 tải được asset release của repo private (không có CORS). Xem
 [spike](docs/superpowers/spikes/2026-10-08-spikes.md).
 
+## Yêu cầu
+
+- Python ≥ 3.12 (worker; CI chạy 3.12)
+- Node 22 (web)
+- Tài khoản GitHub có GitHub Pages và Actions
+
 ## Cài đặt
 
 1. Push repo này lên GitHub (public). Settings → Pages → Source: **GitHub
@@ -41,6 +47,28 @@ tải được asset release của repo private (không có CORS). Xem
 4. Tạo fine-grained PAT chỉ cho repo library: Contents Read & write, Actions
    Read & write, Metadata Read.
 5. Mở trang web → "Cài đặt" → nhập `owner/hako2epub-library` và PAT.
+
+Nhánh `files` được worker tạo tự động từ `main` ở lần tải đầu tiên (không phải
+nhánh orphan), nên nó mang theo lịch sử của `main` lúc tạo.
+
+### Bảo mật token
+
+Mặc định PAT được lưu trong `localStorage` của origin
+`https://<owner>.github.io`. Origin này **dùng chung cho mọi trang GitHub Pages
+dưới cùng tài khoản**: bất kỳ project Pages nào khác của bạn có chạy JavaScript
+bên thứ ba đều đọc được token. Nên:
+
+- dùng custom domain riêng cho hako2epub-web, hoặc không có trang Pages nào
+  khác dưới tài khoản này;
+- bỏ chọn "Ghi nhớ token trên trình duyệt này" ở màn Cài đặt để token chỉ nằm
+  trong `sessionStorage` (mất khi đóng tab);
+- giữ PAT ở phạm vi tối thiểu (chỉ repo library) và có hạn dùng.
+
+## Kiểm tra cập nhật hoạt động thế nào
+
+"Kiểm tra cập nhật" tải chương mới của các tập đã tải và các tập mới ra sau tập
+cuối cùng đã tải. Các tập cũ hơn mà bạn chưa từng chọn tải (bỏ qua có chủ ý) sẽ
+**không** được tải; muốn có chúng thì chọn tải từ màn hình Truyện.
 
 ## Phát triển
 
@@ -57,7 +85,9 @@ npm --prefix web run build
 
 ## Giới hạn đã biết
 
-- EPUB lớn hơn khoảng 70 MB bị từ chối (giới hạn của Contents API).
+- EPUB lớn hơn khoảng 70 MB bị từ chối (giới hạn của Contents API). Mức trần
+  này mới chỉ được kiểm chứng thực tế tới khoảng 9 MB; file lớn hơn có thể lỗi
+  sớm hơn (worker báo lỗi rõ ràng).
 - Repo private có 2 000 phút Actions/tháng.
 - Nhánh `files` phình dần theo mỗi lần cập nhật (có thể squash về sau).
 - Trường tác giả lấy từ parser upstream, đôi khi hiển thị tình trạng truyện
