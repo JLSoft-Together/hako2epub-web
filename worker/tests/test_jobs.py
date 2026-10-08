@@ -87,6 +87,8 @@ class FakeDownloader:
             (v.name, [c.name for c in v.chapters]) for v in volumes]))
         results = []
         for v in volumes:
+            if should_cancel():  # core breaks at a volume boundary
+                break
             if v.name in self.fail:
                 logging.getLogger('hako2epub.downloader').error(
                     f'Volume "{v.name}" failed: boom')
@@ -120,7 +122,7 @@ class FakeDownloader:
         return []
 
 
-def make_ctx(client, novels, fail=None, request_id='req1'):
+def make_ctx(client, novels, fail=None, request_id='req1', cancel=None):
     calls = []
     reporter = ProgressReporter(lambda s: None, request_id, 'download',
                                 clock=lambda: 0.0, now_iso=lambda: NOW)
@@ -129,6 +131,8 @@ def make_ctx(client, novels, fail=None, request_id='req1'):
         make_downloader=lambda lib: FakeDownloader(lib, novels, calls, fail),
         should_cancel=lambda: False, now_iso=lambda: NOW,
     )
+    if cancel:
+        ctx.should_cancel = lambda: cancel(ctx)
     return ctx, calls
 
 
@@ -175,6 +179,66 @@ def test_download_subset_of_untracked_volume_keeps_only_selected_chapters():
     run_download(ctx, {'url': URL, 'volumes': [
         {'index': 0, 'name': 'Tập 1', 'chapters': [0, 2]}]})
     assert ('download_volumes', [('Tập 1', ['C1', 'C3'])]) in calls
+
+
+def test_download_fresh_selection_uses_volume_order_without_duplicates():
+    client = FakeClient()
+    ctx, calls = make_ctx(client, {URL: make_novel()})
+    run_download(ctx, {'url': URL, 'volumes': [
+        {'index': 0, 'name': 'Tập 1', 'chapters': [2, 0, 2]}]})
+    assert ('download_volumes', [('Tập 1', ['C1', 'C3'])]) in calls
+    vol = client.json[INFO_PATH]['ln_list'][0]['vol_list'][0]
+    assert vol['chapter_list'] == ['C1', 'C3']
+
+
+def test_download_append_selection_uses_volume_order_without_duplicates():
+    client = FakeClient(info=tracked_info(vols={'Tập 1': ['C1']}))
+    ctx, calls = make_ctx(client, {URL: make_novel()})
+    run_download(ctx, {'url': URL, 'volumes': [
+        {'index': 0, 'name': 'Tập 1', 'chapters': [2, 1, 2]}]})
+    assert ('apply_updates', [('Tập 1', ['C2', 'C3'], ['C1'])]) in calls
+    vol = client.json[INFO_PATH]['ln_list'][0]['vol_list'][0]
+    assert vol['chapter_list'] == ['C1', 'C2', 'C3']
+
+
+def test_download_empty_selection_is_skipped():
+    client = FakeClient()
+    ctx, calls = make_ctx(client, {URL: make_novel()})
+    run_download(ctx, {'url': URL, 'volumes': [
+        {'index': 0, 'name': 'Tập 1', 'chapters': []},
+        {'index': 1, 'name': 'Tập 2', 'chapters': None}]})
+    assert [c for c in calls if c[0] == 'download_volumes'] == [
+        ('download_volumes', [('Tập 2', ['D1', 'D2'])])]
+    assert ctx.reporter.state['volumes'] == {'done': 1, 'total': 1}
+
+
+def test_download_only_empty_selections_fails_in_vietnamese():
+    ctx, calls = make_ctx(FakeClient(), {URL: make_novel()})
+    with pytest.raises(JobError, match='Chưa chọn chương nào để tải'):
+        run_download(ctx, {'url': URL, 'volumes': [
+            {'index': 0, 'name': 'Tập 1', 'chapters': []}]})
+    assert not [c for c in calls if c[0] == 'download_volumes']
+
+
+def test_download_cancel_between_volumes_raises_cancelled():
+    client = FakeClient()
+    ctx, _ = make_ctx(client, {URL: make_novel()},
+                      cancel=lambda c: c.reporter.state['volumes']['done'] >= 1)
+    with pytest.raises(Cancelled):
+        run_download(ctx, {'url': URL, 'volumes': [
+            {'index': 0, 'name': 'Tập 1', 'chapters': None},
+            {'index': 1, 'name': 'Tập 2', 'chapters': None}]})
+    results = ctx.reporter.state['results']
+    assert [r['volume'] for r in results] == ['Tập 1']
+
+
+def test_update_cancel_after_update_novel_raises_cancelled():
+    client = FakeClient(info=tracked_info())
+    ctx, calls = make_ctx(client, {URL: make_novel()}, cancel=lambda c: True)
+    with pytest.raises(Cancelled):
+        run_update(ctx, {'url': URL})
+    assert [c[0] for c in calls] == ['fetch_novel', 'update_novel']
+    assert snapshot_path('truyen-1') not in client.json
 
 
 def test_selected_chapters_on_tracked_volume_appends():

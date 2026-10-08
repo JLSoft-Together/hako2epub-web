@@ -147,6 +147,9 @@ def run_download(ctx: Context, payload: dict) -> None:
     url, nid = _canonical(payload)
     library, downloader, novel = _start(ctx, url, nid)
     picked, changed = _selected(novel, payload.get('volumes') or [])
+    picked = [(volume, chapters) for volume, chapters in picked if chapters != []]
+    if not picked:
+        raise JobError('Chưa chọn chương nào để tải')
     _load(ctx, downloader, [volume for volume, _ in picked])
 
     entry = tracker.find_novel(_fresh_info(ctx.client), url)
@@ -155,14 +158,17 @@ def run_download(ctx: Context, payload: dict) -> None:
         if chapters is not None and any(
                 not 0 <= i < len(volume.chapters) for i in chapters):
             raise changed
+        # Volume order, no duplicates, whatever order the payload used.
+        chosen = None if chapters is None else [
+            volume.chapters[i] for i in sorted(set(chapters))]
         if chapters is None or tracker.find_volume(entry, volume.name) is None:
-            if chapters is not None:
-                volume.chapters = [volume.chapters[i] for i in chapters]
+            if chosen is not None:
+                volume.chapters = chosen
             fresh.append(volume)
             continue
         known = tracker.stored_chapters(entry, volume.name)
-        new = [volume.chapters[i] for i in chapters
-               if volume.chapters[i].name not in set(known)]
+        known_set = set(known)
+        new = [chapter for chapter in chosen if chapter.name not in known_set]
         if new:
             append.append(UpdateCandidate(novel, volume, new, known))
 
@@ -183,6 +189,9 @@ def run_download(ctx: Context, payload: dict) -> None:
                 run()
             except DownloadError as exc:  # every volume of the batch failed
                 error = exc
+            # Core stops at a volume boundary without raising.
+            if ctx.should_cancel():
+                raise Cancelled('Stopped between volumes')
         for name in requested:
             if name not in done:
                 ctx.reporter.volume_done(
@@ -206,6 +215,8 @@ def _update_one(ctx: Context, url: str, nid: str) -> None:
 
     with _capture_core_logs(ctx.reporter):
         downloader.update_novel(novel, info, **_callbacks(ctx, counted))
+    if ctx.should_cancel():
+        raise Cancelled('Stopped between volumes')
     _write_snapshot(ctx, novel, nid)
 
 
