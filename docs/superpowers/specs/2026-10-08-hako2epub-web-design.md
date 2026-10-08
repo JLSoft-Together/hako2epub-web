@@ -101,7 +101,7 @@ Giữ nguyên format của `core/.../tracker.py` (`ln_list → vol_list → chap
   "num_chapter": 12,
   "chapter_list": ["Chương 1", "..."],
   "asset": {
-    "release_tag": "novel-1234",
+    "release_tag": "novel-truyen-1234",
     "asset_id": 987654,
     "name": "tap-3-ten-truyen-1a2b3c4d.epub",
     "filename": "Tập 3 - Tên Truyện.epub",
@@ -117,8 +117,12 @@ sau này import file này.
 
 ### 3.3 `data/novels/<novel_id>.json`
 
-- `novel_id` = số ID ở đầu đoạn đường dẫn của truyện (`/truyen/1234-ten-truyen` → `1234`).
+- `novel_id` = `<loại>-<số ID>` lấy từ đường dẫn (`/truyen/1234-ten-truyen` → `truyen-1234`,
+  `/sang-tac/77-abc` → `sang-tac-77`); có tiền tố loại vì số ID có thể trùng giữa các loại.
   ID này giống nhau trên cả ba mirror (`ln.hako.vn`, `docln.net`, `docln.sbs`).
+- URL chuẩn (`canonical_url`) = `https://ln.hako.vn/<loại>/<id-slug>`: bỏ query/fragment/
+  dấu `/` cuối và mọi đoạn sau (chương, volume). Worker luôn gọi `fetch_novel` với URL
+  chuẩn, vì `tracker.find_novel` so khớp `ln_url` nguyên văn.
 - Nội dung: `name`, `url` (domain chuẩn), `author`, `cover_url`, `summary_html`,
   `volumes[]` (`name`, `url`, `cover_url`, `chapters[]` gồm `name` + `url`), `fetched_at`.
 - Được ghi bởi `inspect` và ghi đè bởi `update`. Web hiển thị cache ngay, kèm nút
@@ -215,12 +219,12 @@ Mỗi workflow nhận 2 input kiểu chuỗi: `request_id` và `payload` (JSON).
 | Lệnh / workflow | `payload` | Việc làm |
 |---|---|---|
 | `inspect` | `{"url"}` | `fetch_novel` + `load_chapters` mọi volume → ghi snapshot |
-| `download` | `{"url", "volumes": [idx], "chapters"?: {"<volIdx>": [chapterIdx]}}` | lọc volume/chương → `download_volumes` → upload từng volume qua `on_volume` |
+| `download` | `{"url", "volumes": [{"index", "name", "chapters": [chapterIdx] \| null}]}` | volume chưa theo dõi hoặc `chapters = null` → `download_volumes` (build mới); volume đã theo dõi và có `chapters` → `UpdateCandidate` với các chương chưa có → `apply_updates` (append, không ghi đè EPUB cũ) |
 | `update` | `{"url"?}` (trống = tất cả) | `find_updates` + `apply_updates` → ghi lại snapshot; dọn nhánh `status/*` cũ hơn 24 giờ |
 
-Chỉ số volume/chương tính theo snapshot. Worker fetch lại trang truyện; nếu danh
-sách volume đã đổi khiến chỉ số không còn khớp tên trong snapshot, job dừng với
-lỗi "Danh sách volume đã thay đổi, hãy làm mới" thay vì tải nhầm.
+Chỉ số volume/chương tính theo snapshot. Worker fetch lại trang truyện; nếu
+`novel.volumes[index].name != name` thì job dừng với lỗi "Danh sách volume đã
+thay đổi, hãy làm mới" thay vì tải nhầm.
 
 ### 4.4 Workflow mẫu (`library-template/.github/workflows/*.yml`)
 
@@ -244,7 +248,7 @@ lỗi "Danh sách volume đã thay đổi, hãy làm mới" thay vì tải nhầ
 {
   "request_id": "…", "kind": "download", "state": "running",
   "phase": "chapters", "novel": "Tên truyện",
-  "volume": { "i": 2, "n": 5, "name": "Tập 2" },
+  "volumes": { "done": 1, "total": 5 },
   "chapters": { "done": 17, "total": 40 },
   "log": ["…20 dòng cuối…"],
   "results": [{ "volume": "Tập 1", "ok": true, "chapters": 12, "skipped_chapters": 0, "images": 30, "skipped_images": 1 }],
@@ -253,8 +257,10 @@ lỗi "Danh sách volume đã thay đổi, hãy làm mới" thay vì tải nhầ
 }
 ```
 
-- `state` có các giá trị: `running`, `done` hoặc `failed`. Khi bị huỷ, worker không
-  kịp ghi gì; web suy ra trạng thái huỷ từ `conclusion` của run.
+- `state` có các giá trị: `running`, `done`, `failed` hoặc `cancelled`. Khi bị huỷ,
+  runner gửi SIGINT; worker bắt tín hiệu, cho `should_cancel` trả về `True` và cố
+  ghi `cancelled`. Nếu không kịp ghi, web suy ra trạng thái huỷ từ `conclusion`
+  của run.
 - Mỗi request một nhánh, để tránh các commit của Contents API giẫm lên nhau.
 
 ### 4.6 Huỷ và lỗi
