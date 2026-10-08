@@ -33,3 +33,14 @@ def test_asset_name_long_and_symbols_is_bounded():
 
 def test_asset_name_distinguishes_similar_names():
     assert asset_name('Tập 1 - A.epub') != asset_name('Tap 1 - A.epub')
+
+
+def test_asset_name_suffix_is_sha1_of_filename():
+    import hashlib
+    expected = hashlib.sha1('a.epub'.encode('utf-8')).hexdigest()[:8]
+    assert asset_name('a.epub') == 'a-' + expected + '.epub'
+    assert asset_name('a.epub') == 'a-6507318e.epub'
+
+
+def test_asset_name_fixed_vector_vietnamese():
+    assert asset_name('Tập 3 - Đại Ma Vương.epub') == 'tap-3-dai-ma-vuong-a267e305.epub'

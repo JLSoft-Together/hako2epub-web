@@ -45,7 +45,7 @@ def novel_id(url: str) -> str:
 
 def asset_name(filename: str) -> str:
     stem = filename[:-5] if filename.lower().endswith('.epub') else filename
-    digest = hashlib.sha256(filename.encode('utf-8')).hexdigest()[:8]
+    digest = hashlib.sha1(filename.encode('utf-8')).hexdigest()[:8]
     text = stem.replace('đ', 'd').replace('Đ', 'D')
     text = unicodedata.normalize('NFKD', text)
     text = text.encode('ascii', 'ignore').decode('ascii').lower()
